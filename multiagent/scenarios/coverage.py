@@ -13,21 +13,22 @@ class Scenario(BaseScenario):
         # 智能体数量
         num_agents = 3
         # POI数量
-        num_pois = 20
+        num_pois = 30
         world.collaborative = True
         # 添加智能体
         world.agents = [Agent() for i in range(num_agents)]
         for i, agent in enumerate(world.agents):
             agent.name = 'agent %d' % i
             agent.collide = True
-            agent.silent = True
-            agent.size = 0.1
+            agent.silent = False
+            agent.size = 0.05
         # 添加 POI
         world.pois = [POI() for i in range(num_pois)]
         for i, poi in enumerate(world.pois):
             poi.name = 'poi %d' % i
             poi.collide = False
             poi.movable = False
+            poi.size = 0.02
         # world进行初始化
         self.reset_world(world)
         return world

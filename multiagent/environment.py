@@ -13,7 +13,7 @@ class MultiAgentEnv(gym.Env):
     }
 
     # 根据具体的scenarios用创建一个world，scenarios中的reward,observation作为参数创建env对象中
-    # shared_viewer 指是否多个agengs共享同一渲染器（他们的观测是否显示在一个窗口里）
+    # shared_viewer 指是否多个agents共享同一渲染器（他们的观测是否显示在一个窗口里）
     def __init__(self, world, reset_callback=None, reward_callback=None,
                  observation_callback=None, info_callback=None,
                  done_callback=None, shared_viewer=True):
@@ -22,6 +22,7 @@ class MultiAgentEnv(gym.Env):
         # 设置所需gym环境属性
         self.n_agents = len(world.policy_agents)
         self.n_pois = len(world.pois)
+
         self.num_action = 2
         # 不知道是啥
         self.n_pois_obs = world.num_agents_obs
@@ -33,27 +34,31 @@ class MultiAgentEnv(gym.Env):
         self.info_callback = info_callback
         self.done_callback = done_callback
         # 环境参数
+        # 是否是离散动作
         self.discrete_action_space = False
-        # 如果True 动作的值为 0...N,否则是一个N维的独热码
+        # 离散动作且如果True 动作是一个单独的值(0...N),否则是一个N维的独热码
         self.discrete_action_input = False
         # 如果为true 即使动作是连续的，动作也将被离散执行
         self.force_discrete_action = world.discrete_action if hasattr(world, 'discrete_action') else False
         # 如果为true 所有agent都有相同的reward
         self.shared_reward = world.collaborative if hasattr(world, 'collaborative') else False
+        # range_p不得而知
         self.range_p = world.range_p
+        # 位置信息的维度(2d情况就是2)
         self.dim_p = world.dim_p
         self.time = 0
-        # 配置空间
+        # 配置空间(注意是所有agents的组成的) eg:action_space[i]代表第i个agent的动作空间
         self.action_space = []
         self.observation_space = []
         for agent in self.agents:
+            # 记录单个agent物理动作空间和通信动作空间
             total_action_space = []
             # 配置物理动作空间
             if self.discrete_action_space:
-                # 动作空间数等于方向数乘2加1(空动作)
+                # 动作空间取值数等于方向数乘2加1(空动作) Box中shape必须是元组 (x,)必须加逗号否则会当成单独的值
                 u_action_space = spaces.Discrete(world.dim_p * 2 + 1)
             else:
-                u_action_space = spaces.Box(low=-agent.u_range, high=+agent.u_range, shape=(world.dim_p,),
+                u_action_space = spaces.Box(low=-agent.u_range*0.1, high=+agent.u_range*0.1, shape=(world.dim_p,),
                                             dtype=np.float32)
             if agent.movable:
                 total_action_space.append(u_action_space)
@@ -61,14 +66,14 @@ class MultiAgentEnv(gym.Env):
             if self.discrete_action_space:
                 c_action_space = spaces.Discrete(world.dim_c)
             else:
-                c_action_space = spaces.Box(low=0.0, high=1.0, shape=(world.dim_c,), dtype=np.float32)
+                c_action_space = spaces.Box(low=0.0, high=0.1, shape=(world.dim_c,), dtype=np.float32)
             if not agent.silent:
                 total_action_space.append(c_action_space)
             # 对action_space 进行汇总
             if len(total_action_space) > 1:
                 # 如果动作空间全是离散的，简化为MultiDiscrete动作空间
-                if all([isinstance(act_space, spaces.Discrete) for act_apace in total_action_space]):
-                    act_space = MultiDiscrete([[0, act_space.n - 1] for act_apace in total_action_space])
+                if all([isinstance(act_space, spaces.Discrete) for act_space in total_action_space]):
+                    act_space = MultiDiscrete([[0, act_space.n - 1] for act_space in total_action_space])
                 else:
                     '''
                     Example usage:
@@ -89,7 +94,7 @@ class MultiAgentEnv(gym.Env):
             self.viewers = [None]
         else:
             # self.n 是什么？好像是agents的数量
-            self.viewers = [None] * self.n
+            self.viewers = [None] * self.n_agents
 
             # bound
 
@@ -155,7 +160,7 @@ class MultiAgentEnv(gym.Env):
                 index += s
             action = act
         else:
-            action = [action]
+            action = action
 
         if agent.movable:
             # 物理动作
@@ -182,12 +187,14 @@ class MultiAgentEnv(gym.Env):
                 # 如果是连续动作空间，直接把数组赋值
                 else:
                     agent.action.u = action[0]
+                    print('test action.u:', agent.action.u)
             # 对动作(力)的敏感程度，如果动作就是移动的距离就不需要了
             # sensitivity = 5.0
             # if agent.accel is not None:
             #     sensitivity = agent.accel
             # agent.action.u *= sensitivity
             action = action[1:]
+            print('test last action.u:', action)
         if not agent.silent:
             # 通信动作
             if self.discrete_action_input:
