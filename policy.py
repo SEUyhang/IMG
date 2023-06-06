@@ -16,10 +16,10 @@ for _ in range(500):
     obs_n, reward_n, done_n, _ = env.step(act_n)
 
     # 打印当前观察值、奖励和是否结束的信息
-    print("Observations:", obs_n)
-    print("Rewards:", reward_n)
-    print("Done:", done_n)
-    print("-----------------------")
+    # print("Observations:", obs_n)
+    # print("Rewards:", reward_n)
+    # print("Done:", done_n)
+    # print("-----------------------")
     env.render()
 
 # 关闭环境

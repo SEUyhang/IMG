@@ -56,17 +56,18 @@ class MultiAgentEnv(gym.Env):
             # 配置物理动作空间
             if self.discrete_action_space:
                 # 动作空间取值数等于方向数乘2加1(空动作) Box中shape必须是元组 (x,)必须加逗号否则会当成单独的值
-                u_action_space = spaces.Discrete(world.dim_p * 2 + 1)
+                u_action_space = spaces.Discrete((world.dim_p-1) * 2 + 1)
             else:
-                u_action_space = spaces.Box(low=-agent.u_range*0.1, high=+agent.u_range*0.1, shape=(world.dim_p,),
-                                            dtype=np.float32)
+                u_action_space_1 = spaces.Box(low=0.0, high=+agent.u_range, shape=(1,),dtype=np.float32)
+                u_action_space_2 = spaces.Box(low=-np.pi, high=+np.pi, shape=(1,),dtype=np.float32)
+                u_action_space = spaces.Tuple([u_action_space_1,u_action_space_2])
             if agent.movable:
                 total_action_space.append(u_action_space)
             # 配置通信动作空间
             if self.discrete_action_space:
                 c_action_space = spaces.Discrete(world.dim_c)
             else:
-                c_action_space = spaces.Box(low=0.0, high=0.1, shape=(world.dim_c,), dtype=np.float32)
+                c_action_space = spaces.Box(low=0.0, high=1, shape=(world.dim_c,), dtype=np.float32)
             if not agent.silent:
                 total_action_space.append(c_action_space)
             # 对action_space 进行汇总
@@ -106,12 +107,13 @@ class MultiAgentEnv(gym.Env):
         obs_n = []
         reward_n = []
         done_n = []
-        info_n = {'n': []}
+        info_n = {'n': [], 'full': []}
+        self.world.update_poi_list = []
         self.agents = self.world.policy_agents
         # 为每一个agent设置动作
         for i, agent in enumerate(self.agents):
             self._set_action(action_n[i], agent, self.action_space[i])
-        # 更新world
+        # 更新world, 根据agent的动作进行位置的变更
         self.world.step()
         # 为每个智能体记录观测
         for agent in self.agents:
@@ -121,6 +123,15 @@ class MultiAgentEnv(gym.Env):
             info_n['n'].append(self._get_info(agent))
         # 所有agents在合作情况下获得相同的总体奖励
         reward = np.sum(reward_n)
+        tmp_aois = np.array([poi.aoi for poi in self.world.pois])
+        for i, poi in enumerate(self.world.pois):
+            if i in self.world.update_poi_list:
+                self.world.pois[i].aoi = 1
+            else:
+                self.world.pois[i].aoi += 1
+        new_aois = np.array([poi.aoi for poi in self.world.pois])
+        # print('aoi:',tmp_aois)
+        reward += np.mean(tmp_aois-new_aois)
         if self.shared_reward:
             reward_n = [reward] * self.n_agents
         return obs_n, reward_n, done_n, info_n
@@ -146,7 +157,7 @@ class MultiAgentEnv(gym.Env):
 
     # 将强化学习agent得到的动作为环境中具体的agent设置环境动作
     def _set_action(self, action, agent, action_space, time=None):
-        agent.action.u = np.zeros(self.world.dim_p)
+        agent.action.u = np.zeros(self.world.dim_p-1)
         agent.action.c = np.zeros(self.world.dim_c)
         # 处理动作
         if isinstance(action_space, MultiDiscrete):
@@ -166,7 +177,7 @@ class MultiAgentEnv(gym.Env):
             # 物理动作
             # 如果是离散的动作值输入， 每个动作对应一个整数值
             if self.discrete_action_input:
-                agent.action.u = np.zeros(self.world.dim_p)
+                agent.action.u = np.zeros(self.world.dim_p-1)
                 # 处理离散动作 agent.action.u是一个dim_p维数组，每一个维度的数值控制在该方向移动距离,比如u[0]=1代表往上，u[0]=-1代表往下
                 # action是一个数组，第一个值代表物理动作，第二个值代表通信动作
                 if action[0] == 1: agent.action.u[0] = -1.0
@@ -186,15 +197,14 @@ class MultiAgentEnv(gym.Env):
                     agent.action.u[1] += action[0][3] - action[0][4]
                 # 如果是连续动作空间，直接把数组赋值
                 else:
-                    agent.action.u = action[0]
-                    print('test action.u:', agent.action.u)
+                    agent.action.u[0] = action[0][0][0]
+                    agent.action.u[1] = action[0][1][0]
             # 对动作(力)的敏感程度，如果动作就是移动的距离就不需要了
             # sensitivity = 5.0
             # if agent.accel is not None:
             #     sensitivity = agent.accel
             # agent.action.u *= sensitivity
             action = action[1:]
-            print('test last action.u:', action)
         if not agent.silent:
             # 通信动作
             if self.discrete_action_input:
@@ -299,7 +309,7 @@ class MultiAgentEnv(gym.Env):
             self.viewers[i].set_bounds(pos[0] - cam_range, pos[0] + cam_range, pos[1] - cam_range, pos[1] + cam_range)
             # 更新图形位置
             for e, entity in enumerate(self.world.entities):
-                self.render_geoms_xform[e].set_translation(*entity.state.p_pos)
+                self.render_geoms_xform[e].set_translation(*entity.state.p_pos[0:2])
             # 将渲染显示或加入数组
             results.append(self.viewers[i].render(return_rgb_array=(mode == 'rgb_array')))
 
