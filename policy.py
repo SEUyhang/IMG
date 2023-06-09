@@ -13,7 +13,8 @@ for _ in range(500):
     act_n = [env.action_space[i].sample() for i in range(env.n_agents)]
 
     # 执行动作并获取下一个观察值、奖励和是否结束的信息
-    obs_n, reward_n, done_n, _ = env.step(act_n)
+    obs_n, reward_n, done_n, info_n = env.step(act_n)
+    print(info_n)
 
     # 打印当前观察值、奖励和是否结束的信息
     # print("Observations:", obs_n)

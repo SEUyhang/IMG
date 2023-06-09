@@ -44,6 +44,7 @@ class Scenario(BaseScenario):
             agent.energy_consumption = 0.0
             agent.comm_consumption = 0.0
             agent.collision = 0
+            agent.SNR = 0
         # 设置poi初始属性
         for i, poi in enumerate(world.pois):
             poi.color = np.array([0.25, 0.25, 0.25])
@@ -62,13 +63,14 @@ class Scenario(BaseScenario):
 
     def reward(self, agent, world):
         rew = 0.0
-        if self.is_collision(agent, world):
+        if self.test_collision(agent, world) != 0:
             # 发生碰撞给一个penalty
-            rew -= 1.0
+            rew -= world.collision_penalty
             # 如果发生碰撞那就只有能量损耗没有aoi的更新
             consume_energy = self.consume_energy(world.time_slot, 0, 0, world) * 1e-3
-            agent.collision += 1
-            agent.energy_consumption += consume_energy
+            agent.collision = 1
+            agent.energy_consumption = consume_energy
+            agent.SNR = 0
         else:
             distance = agent.action.u[0] * 1e3
             fly_time = distance / agent.max_speed
@@ -76,14 +78,27 @@ class Scenario(BaseScenario):
             hover_time = world.time_slot - fly_time
             update_poi_list, K_t, poi_SNR, update_poi_uav_tmp = self.update_poi_status(agent, world.update_poi_list, hover_time, world)
             consume_energy = self.consume_energy(fly_time, hover_time, K_t, world) * 1e-3
-            agent.energy_consumption += consume_energy
-
+            agent.energy_consumption = consume_energy
+            agent.SNR = poi_SNR
+            agent.collision = 0
         return rew
 
     # 每个agent都一样
-    def info(self, agent, world):
+    def info(self, world):
         # 该agent的新坐标加入到路径之中
-        agent.trace.append(agent.state.p_pos)
+        self.info = {
+            'collision': [],
+            'SNR': [],
+            'AOI': [],
+            'energy_consumption': []
+        }
+        for agent in world.agents:
+            self.info['collision'].append(agent.collision)
+            self.info['SNR'].append(agent.SNR)
+            self.info['energy_consumption'].append(agent.energy_consumption)
+        for poi in world.pois:
+            self.info['AOI'].append(poi.aoi)
+        return self.info
 
 
     # 获取以当前智能体为中心(坐标原点)所有poi的位置信息
@@ -116,7 +131,7 @@ class Scenario(BaseScenario):
         # 判断是否发生碰撞
         if agent.collide:
             for a in world.agents:
-                if self.is_collision(a, agent):
+                if self.test_collision(a, agent):
                     rew -= 1
                     collisions += 1
         # 判断是否进行了通信
@@ -126,9 +141,9 @@ class Scenario(BaseScenario):
         return (rew, collisions, comm_overhead, sum_aoi / len(world.pois))
 
     # 判断两个agent是否发生碰撞
-    def is_collision(self, agent, world):
+    def test_collision(self, agent, world):
         # 将运动过程分成100份，判断每一小步中是否会发生碰撞
-        return world.is_collison(agent)
+        return world.test_collision(agent)
 
     # 判断是否通信
     def is_comm(self, agent):

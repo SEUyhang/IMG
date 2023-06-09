@@ -107,7 +107,7 @@ class MultiAgentEnv(gym.Env):
         obs_n = []
         reward_n = []
         done_n = []
-        info_n = {'n': [], 'full': []}
+        info_n = {}
         self.world.update_poi_list = []
         self.agents = self.world.policy_agents
         # 为每一个agent设置动作
@@ -120,7 +120,7 @@ class MultiAgentEnv(gym.Env):
             obs_n.append(self._get_obs(agent))
             reward_n.append(self._get_reward(agent))
             done_n.append(self._get_done(agent))
-            info_n['n'].append(self._get_info(agent))
+        info_n = self._get_info()
         # 所有agents在合作情况下获得相同的总体奖励
         reward = np.sum(reward_n)
         tmp_aois = np.array([poi.aoi for poi in self.world.pois])
@@ -130,7 +130,6 @@ class MultiAgentEnv(gym.Env):
             else:
                 self.world.pois[i].aoi += 1
         new_aois = np.array([poi.aoi for poi in self.world.pois])
-        # print('aoi:',tmp_aois)
         reward += np.mean(tmp_aois-new_aois)
         if self.shared_reward:
             reward_n = [reward] * self.n_agents
@@ -217,10 +216,10 @@ class MultiAgentEnv(gym.Env):
         assert len(action) == 0
 
     # 获取信息用于基准测试
-    def _get_info(self, agent):
+    def _get_info(self):
         if self.info_callback is None:
             return {}
-        return self.info_callback(agent, self.world)
+        return self.info_callback(self.world)
 
     # 获取某一个agent的观测
     def _get_obs(self, agent):

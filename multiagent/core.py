@@ -102,9 +102,8 @@ class Agent(Entity):
         # 当前episode该agent撞击的次数
         self.collision = 0
         # 平均信噪比
-        self.average_SNR = 0
-        # 上一步的位置
-        self.last_pos = None
+        self.SNR = 0
+
 
 # multi-agent world
 class World(object):
@@ -114,6 +113,8 @@ class World(object):
         self.pois = []
         # position range
         self.range_p = 1
+        # 碰撞惩罚
+        self.collision_penalty = 10.0
         # 通信维度
         self.dim_c = 0
         # 位置维度
@@ -199,55 +200,19 @@ class World(object):
         #         if speed > entity.max_speed:
         #             entity.state.p_vel = entity.state.p_vel / np.sqrt(np.square(entity.state.p_vel[0]) + np.square(entity.state.p_vel[1])) * entity.max_speed
         #     entity.state.p_pos += entity.state.p_vel * self.dt
-        flag0 = False
-
-        for agent1 in self.agents:
-            dx, dy, move_angle = self.cal_pos_offset(agent1)
-            for agent2 in self.agents:
-                dx2, dy2, move_angle = self.cal_pos_offset(agent2)
-                next_pos1 = agent1.state.p_pos + np.array([dx, dy,0.0])
-                next_pos2 = agent2.state.p_pos + np.array([dx2, dy2, 0.0])
-                tmp_pos = [next_pos1, next_pos2]
-                delta_pos = next_pos1 - next_pos2
-                dist = np.sqrt(np.sum(np.square(delta_pos))).astype(np.float32)
-                dist_min = agent1.size + agent2.size
-                # 判断是否会碰撞
-                if dist <= dist_min:
-                    if agent1 is agent2:
-                        pass
-                    else:
-                        flag0 = True
-
+        flag_list = [False] * len(self.agents)
         for i, agent in enumerate(self.agents):
             dx, dy, move_angle= self.cal_pos_offset(agent)
-            flag = self.is_collison(agent)
-            if not flag:
-                agent.last_pos = agent.state.p_pos
+            flag_list[i] = self.test_collision(agent)
+            # 如果出界就拉回来
+            if flag_list[i] == 1:
+                pass
+            # 没出界就直接冲
+            else:
                 agent.state.p_pos += np.array([dx, dy, 0.0], dtype=np.float32)
-        for agent1 in self.agents:
-            dx, dy, move_angle = self.cal_pos_offset(agent1)
-            for agent2 in self.agents:
-                dx2, dy2, move_angle = self.cal_pos_offset(agent2)
-                next_pos1 = agent1.state.p_pos
-                next_pos2 = agent2.state.p_pos
-                delta_pos = next_pos1 - next_pos2
-                dist = np.sqrt(np.sum(np.square(delta_pos))).astype(np.float32)
-                dist_min = agent1.size + agent2.size
-                # 判断是否会碰撞
-                if dist <= dist_min:
-                    if agent1 is agent2:
-                        pass
-                    else:
-                        if flag0:
-                            pass
-                        else:
-                            print('移动之后才检测出来')
-                            print('移动之前预算的位置:',tmp_pos)
-                            print('移动之后预算的位置:',next_pos1,next_pos2)
 
 
-
-    def is_collison(self,agent1):
+    def test_collision(self,agent1):
         # 将一个timeslot的运动过程在时间上分成100份，判断每一小步中是否会发生碰撞
         dx1, dy1, move_angle1 = self.cal_pos_offset(agent1)
         acc_range = 100
@@ -261,19 +226,14 @@ class World(object):
                 # 判断agent下一时刻的位置(被细分之后的一个小时刻)
                 if np.abs(dt * tiny_dx1) >= np.abs(dx1) or np.abs(dt * tiny_dy1) >= np.abs(dy1):
                     new_pos1 = agent1.state.p_pos + np.array([dx1, dy1, 0.0], dtype=np.float32)
-                    # print('agent1跳到下一个位置')
                 else:
                     new_pos1 = agent1.state.p_pos + dt * np.array([tiny_dx1, tiny_dy1, 0.0], dtype=np.float32)
-                    # print('agent1还没跳到下一个位置')
                 if np.abs(dt * tiny_dx2) >= np.abs(dx2) or np.abs(dt * tiny_dy2) >= np.abs(dy2):
                     new_pos2 = agent2.state.p_pos + np.array([dx2, dy2, 0.0], dtype=np.float32)
-                    # print('agent2跳到下一个位置')
                 else:
                     new_pos2 = agent2.state.p_pos + dt * np.array([tiny_dx2, tiny_dy2, 0.0], dtype=np.float32)
-                    # print('agent2还没跳到下一个位置')
                 # 判断是否会出界
-
-                if (-1.0 < new_pos1[0] < 1.0) and (-1.0 < new_pos1[1] < 1.0):
+                if (-1.0 + agent1.size < new_pos1[0] < 1.0 - agent1.size) and (-1.0 + agent1.size < new_pos1[1] < 1.0 - agent1.size):
                     delta_pos = new_pos1 - new_pos2
                     dist = np.sqrt(np.sum(np.square(delta_pos))).astype(np.float32)
                     dist_min = agent1.size + agent2.size
@@ -282,25 +242,14 @@ class World(object):
                         if agent1 is agent2:
                             pass
                         else:
-                            return True
-                    next_pos1 = agent1.state.p_pos + np.array([dx1, dy1, 0.0], dtype=np.float32)
-                    next_pos2 = agent2.state.p_pos + np.array([dx2, dy2, 0.0], dtype=np.float32)
-                    delta_pos = next_pos1 - next_pos2
-                    dist = np.sqrt(np.sum(np.square(delta_pos))).astype(np.float32)
-                    dist_min = agent1.size + agent2.size
-                    # 判断是否会碰撞
-                    if dist <= dist_min:
-                        if agent1 is agent2:
-                            pass
-                        else:
-
-                            # print('{}的时候没检测出来'.format(dt))
-                            # print('new_pos1{} new_pos2{}'.format(new_pos1,new_pos2))
-                            # print('next_pos1{} next_pos2{}'.format(next_pos1,next_pos2))
-                            return True
+                            # 无人机之间碰撞返回2
+                            return 2
                 else:
-                    return True
-        return False
+                    # 超出边界返回1
+                    return 1
+        # 没有任何碰撞返回0
+        return 0
+
     # 根据动作计算agent的下一时刻位置
     def cal_pos_offset(self, agent):
         move_len = agent.action.u[0]
