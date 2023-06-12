@@ -1,9 +1,6 @@
 import numpy as np
-info = {
-            'collision': [],
-            'SNR': [],
-            'AOI': [],
-            'energy_consumption': []
-        }
-info['collision'].append(1)
-print(info)
+dict0 = {
+    'o':[1,2,3],
+    'a':[4,5,6]
+}
+
