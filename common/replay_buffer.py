@@ -48,14 +48,14 @@ class ReplayBuffer:
             idxs = self._get_storage_idx(inc = batch_size)
             # 存储信息
             self.buffers['o'][idxs] = episode_batch['o']
-            self.buffers['u'][idxs] = episode_batch['u']
+            self.buffers['a'][idxs] = episode_batch['a']
             self.buffers['s'][idxs] = episode_batch['s']
             self.buffers['r'][idxs] = episode_batch['r']
             self.buffers['o_next'][idxs] = episode_batch['o_next']
             self.buffers['s_next'][idxs] = episode_batch['s_next']
-            self.buffers['avail_u'][idxs] = episode_batch['avail_u']
-            self.buffers['avail_u_next'][idxs] = episode_batch['avail_u_next']
-            self.buffers['u_onehot'][idxs] = episode_batch['u_onehot']
+            self.buffers['avail_a'][idxs] = episode_batch['avail_a']
+            self.buffers['avail_a_next'][idxs] = episode_batch['avail_a_next']
+            self.buffers['a_onehot'][idxs] = episode_batch['a_onehot']
             self.buffers['padded'][idxs] = episode_batch['padded']
             self.buffers['done'][idxs] = episode_batch['done']
             if self.args.alg == 'maven':

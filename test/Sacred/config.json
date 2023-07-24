@@ -1,0 +1,10 @@
+{
+  "batch_size": 16,
+  "lr": 0.001,
+  "lr_decay": [
+    1000,
+    2000
+  ],
+  "optimizer": "adam",
+  "seed": 442923222
+}

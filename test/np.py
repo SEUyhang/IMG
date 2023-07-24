@@ -1,12 +1,23 @@
 import numpy as np
 from gym import spaces
 
-action1 = spaces.Box(low=-np.pi, high=+np.pi, shape=(2,),dtype=np.float32)
-action2 = spaces.Box(low=-1.0, high=+1.0, shape=(2,),dtype=np.float32)
-action = spaces.Tuple([action1,action2])
-a1 = action1.sample()
-a2 = action2.sample()
-a = action.sample()
-print('a1:  ', a1)
-print('a2:  ', a2)
-print('a:  ',a[0])
+array = np.array([
+     [
+            [-0.5166,  0.8298,  2.4580, -1.9504],
+
+            [ 0.1119, -0.3321, -1.3478, -1.9198],
+
+            [ 0.0522, -0.6053,  0.8119, -1.3469]
+     ],
+
+     [
+            [-0.3774,  0.9283,  0.7996, -0.3882],
+
+            [-1.1077,  1.0664,  0.1263, -1.0631],
+
+            [-0.9061,  1.0081, -1.2769,  0.1035]
+   ]
+]
+)
+m = array.max(axis=1)
+print(m)

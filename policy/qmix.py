@@ -21,7 +21,7 @@ class QMIX:
 
         # 定义网络
         self.eval_rnn = RNN(input_shape, args)  # 每个agent选动作的网络
-        self.target_rnn = RNN(input_shape,args)
+        self.target_rnn = RNN(input_shape, args)
         self.eval_qmix_net = QMixNet(args)      # 把agents的Q值加起来的网络
         self.target_qmix_net = QMixNet(args)
         self.args = args
@@ -82,6 +82,30 @@ class QMIX:
         # 用来把那些填充的经验的TD-error置0，从而不让它们影响到学习
         mask = 1 - batch["padded"].float()
 
+        # 得到每个agent对应的Q值， 维度为(episode个数， max_episode_len, n_agents, n_actions)
+        q_evals, q_targets = 1, 2
+
+    def _get_inputs(self, batch, transition_idx):
+        # 取出所有episode上该transition_idx的经验， u_onehot要取出所有， 因为要用到上一条
+        obs, obs_next, u_onehot = batch['o'][:, transition_idx], \
+                                  batch['o_next'][:, transition_idx], batch['u_onehot'][:]
+        episode_num = obs.shape[0]
+        inputs, inputs_next = obs.shape[0]
+        inputs.append(obs)
+        inputs_next.append(obs_next)
+
+        # 给obs添加上一个动作、agent编号
+        if self.args.last_action:
+            if transition_idx == 0: #如果是第一条经验， 就让前一个动作为0向量
+                inputs.append(torch.zeros_like(u_onehot[:, transition_idx]))
+            else:
+                inputs.append(u_onehot[:, transition_idx - 1])
+            inputs_next.append(u_onehot[:, transition_idx])
+
+        if self.args.reuse_network:
+            # 因为当前的obs三维的数据，每一维分别代表(episode编号，agent编号，obs维度)，直接在dim_1上添加对应的向量
+            # 即可，比如给agent_0后面加(1, 0, 0, 0, 0)，表示5个agent中的0号。而agent_0的数据正好在第0行，那么需要加的
+            # agent编号恰好就是一个单位矩阵，即对角线为1，其余为0
 
     def init_hidden(self, episode_num):
         # 为每个episode中的每个agent都初始化一个eval_hidden、target_hidden

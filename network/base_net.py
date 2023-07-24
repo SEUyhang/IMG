@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as f
 
+# 原版QMIX中是离散动作，因此输出的是所有动作的得分
 class RNN(nn.Module):
     # 因为所有agents共享相同的网络，input_shape = obs_shape + n_actions + n_agents
     def __init__(self, input_shape, args):

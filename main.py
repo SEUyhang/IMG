@@ -1,6 +1,13 @@
 import numpy as np
-dict0 = {
-    'o':[1,2,3],
-    'a':[4,5,6]
-}
+import torch
+import os
+
+
+a = torch.randn(2,3,4)
+print(a)
+b = a[:, 1, :]
+print(b)
+c = a[:, 1]
+print(c)
+
 
