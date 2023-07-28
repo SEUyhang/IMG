@@ -104,7 +104,23 @@ class QMIX:
         q_total_eval = self.eval_qmix_net(q_evals, s)
         q_total_target = self.target_qmix_net(q_targets, s_next)
 
+        q_total_eval = self.eval_qmix_net(q_evals, s)
+        q_total_target = self.target_qmix_net(q_targets, s_next)
+        # 预期的折扣奖励
+        targets = r + self.args.gamma * q_total_target * (1 - done)
+        td_error = (q_total_eval - targets.detach())
+        maskd_td_error = mask * td_error
 
+        # 不能直接用mean，因为还有许多经验是没用的，所以要求和再比真实的经验数，才是真正的均值
+        loss = (maskd_td_error ** 2).sum() / mask.sum()
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm(self.eval_parameters, self.args.grad_norm_clip)
+        self.optimizer.step()
+
+        if train_step > 0 and train_step % self.args.target_update_cycle == 0:
+            self.target_rnn.load_state_dict(self.eval_rnn.state_dict())
+            self.target_qmix_net.load_state_dict(self.eval_qmix_net.state_dict())
     def _get_inputs(self, batch, transition_idx):
         # 取出所有episode上该transition_idx的经验， u_onehot要取出所有， 因为要用到上一条
         obs, obs_next, u_onehot = batch['o'][:, transition_idx], \
@@ -140,6 +156,7 @@ class QMIX:
         q_evals, q_targets = [], []
         # 针对每一个时间步获取输入(包括obs、last action、agent id) 输入的维度为(episode_num * n_agent, obs_shape+n_actions+n_agents)
         for transition_idx in range(max_episode_len):
+            # 此处的inputs是二维的 shape为(episode_num*n_agents, obs_shape+n_actions+n_agents)
             inputs, inputs_next = self._get_inputs(batch, transition_idx)
             if self.args.cuda:
                 inputs = inputs.cuda()
@@ -148,11 +165,15 @@ class QMIX:
                 self.target_hidden = self.target_hidden.cuda()
             q_eval, self.eval_hidden = self.eval_rnn(inputs, self.eval_hidden)
             q_target, self.target_hidden = self.target_rnn(inputs_next, self.target_hidden)
-            q_eval.append(q_eval)
+
+            # 把q_eval维度重新变回三维 (episode_num, n_agents, n_actions)
+            q_eval = q_eval.view(episode_num, self.n_agents, -1)
+            q_target = q_target.view(episode_num, self.n_agents, -1)
+            q_evals.append(q_eval)
             q_targets.append(q_target)
         # 得的q_eval和q_target是一个列表，列表里装着max_episode_len个数组，数组的的维度是(episode个数, n_agents，n_actions)
         # 把该列表转化成(episode个数, max_episode_len， n_agents，n_actions)的数组
-        q_evals = torch.stack(q_eval, dim=1)
+        q_evals = torch.stack(q_evals, dim=1)
         q_targets = torch.stack(q_targets, dim=1)
         return q_evals, q_targets
 
