@@ -4,8 +4,59 @@ from torch.distributions import one_hot_categorical
 import time
 
 class RolloutWorker:
-    def __init__(self):
-        raise NotImplementedError
+    def __init__(self, env, agents, args):
+        self.env = env
+        self.agents = agents
+        self.episode_limit = args.episode_limit
+        self.n_actions = args.n_actions
+        self.n_agents = args.n_agents
+        self.state_shape = args.state_shape
+        self.obs_shape = args.obs_shape
+        self.args = args
+
+        self.epsilon = args.epsilon
+        self.anneal_epsilon = args.anneal_epsilon
+        self.min_epsilon = args.min_epsilon
+        print('Init RolloutWorker')
+
+    @torch.no_grad()
+    def generate_episode(self, episode_num=None, evaluate=False):
+        # prepare for save replay of evaluation
+        if self.args.replay_dir != '' and evaluate and episode_num ==0:
+            self.env.close()
+        o, u, r, s, avail_u, u_onehot, done = [],[],[],[],[],[],[]
+        self.env.reset()
+        done = False
+        step = 0
+        # 累计奖励
+        episode_reward = 0
+        last_action = np.zeros((self.args.n_agents, self.args.n_actions))
+        self.agents.policy.init_hidden(1)
+
+        # epsilon
+        epsilon = 0 if evaluate else self.epsilon
+        if self.args.epsilon_anneal_scale == 'episode':
+            epsilon = epsilon - self.anneal_epsilon if epsilon > self.min_epsilon else epsilon
+
+        while not done and step < self.episode_limit:
+            obs = self.env.get_obs()
+            state = self.env.get_state()
+            actions, avail_actions, actions_onehot = [], [], []
+            for agent_id in range(self.n_agents):
+                avail_action = self.env.get_avail_agent_actions(agent_id)
+                action = self.agents.choose_action(obs[agent_id], last_action[agent_id], agent_id,
+                                                   avail_action, epsilon)
+                # 生成onehot向量
+                action_onehot = np.zeros(self.args.n_actions)
+                action_onehot[action] = 1
+                actions.append(np.int(action))
+                actions_onehot.append(action_onehot)
+                avail_actions.append(avail_action)
+                last_action[agent_id] = action_onehot
+            reward, done, info = self.env.step(actions)
+            o.append(obs)
+            s.append(state)
+            u.append(np.reshape(actions, [self.n_agents, 1]))
 
 # RolloutWorker for communication
 class CommRolloutWorker:
@@ -32,10 +83,10 @@ class CommRolloutWorker:
         # 为保存经验做准备,还不太懂
         if self.args.replay_dir != '' and evaluate and episode_num == 0:
             self.env.close()
-        # ！！！avail_u有什么用
-        o, u, r, s, avail_u, u_onehot, adj, next_adj, terminate = [], [], [], [], [], [], [], [], []
+        # adj是邻接矩阵
+        o, u, r, s, avail_u, u_onehot, adj, done = [], [], [], [], [], [], [], []
         self.env.reset()
-        terminated = False
+        done = False
         step = 0
         episode_reward = 0
         # 上一时间步每个agent动作的onehot向量
@@ -46,7 +97,7 @@ class CommRolloutWorker:
         if self.args.epsilon_anneal_scale == 'episode':
             epsilon = epsilon - self.anneal_epsilon if epsilon > self.min_epsilon else epsilon
         # 产生一个episode
-        while not terminated and step < self.episode_limit:
+        while not done and step < self.episode_limit:
             # state和obs不用step,直接用环境的API  !!!给env加一个get_state()
             obs = self.env.get_obs()
             state = self.env.get_state()

@@ -15,7 +15,8 @@ class AgentState(EntityState):
         super(AgentState, self).__init__()
         # 通信表达
         self.c = None
-
+        # 剩余电量
+        self.energy = None
 
 # 智能体的动作
 class Action(object):
@@ -42,8 +43,7 @@ class Entity(object):
         self.color = None
         # 实体的最大速度
         self.max_speed = None
-        # 实体的加速度
-        self.accel = None
+
         # 实体的状态
         self.state = EntityState()
         # 初始质量？
@@ -76,6 +76,8 @@ class Agent(Entity):
         self.u_noise = None
         # 通信噪音
         self.c_noise = None
+        # 大小
+        self.size = 0.1
         # 如果是连续动作，动作的范围(-u_range,+u_range),角度范围(-np.pi, np.pi)
         self.u_range = 0.25
         self.u_angle = np.pi
@@ -123,6 +125,8 @@ class World(object):
         self.dim_color = 3
         # 模拟timestep /s
         self.time_slot = 20
+        # 边界长度[-bound, +bound]
+        self.bound = 400
         # 物理阻尼？
         self.damping = 0.0
         # 交互响应参数？
@@ -187,22 +191,10 @@ class World(object):
 
     # 整合物理状态
     def integrate_state(self, p_change):
-        # for i, entity in enumerate(self.entities):
-        #     if not entity.movable:continue
-        #     # 速度受到阻力影响会有折扣， damping指物理阻尼
-        #     entity.state.p_vel = entity.state.p_vel * (1 - self.damping)
-        #     # 根据受力算出加速度，并改变速度的大小 v = v + a*t =v + F/m * t
-        #     if(p_force[i] is not None):
-        #         entity.state.p_vel += (p_force[i] / entity.mass) * self.dt
-        #     # 如果超速了，就在各个方向的分量上进行等比例缩放，限制到最大速度
-        #     if entity.max_speed is not None:
-        #         speed = np.sqrt(np.square(entity.state.p_vel[0]) + np.square(entity.state.p_vel[1]))
-        #         if speed > entity.max_speed:
-        #             entity.state.p_vel = entity.state.p_vel / np.sqrt(np.square(entity.state.p_vel[0]) + np.square(entity.state.p_vel[1])) * entity.max_speed
-        #     entity.state.p_pos += entity.state.p_vel * self.dt
+        # 记录每个agent是否发生碰撞或者出界
         flag_list = [False] * len(self.agents)
         for i, agent in enumerate(self.agents):
-            dx, dy, move_angle= self.cal_pos_offset(agent)
+            dx, dy= self.cal_pos_offset(agent)
             flag_list[i] = self.test_collision(agent)
             # 如果出界就拉回来
             if flag_list[i] == 1:
@@ -212,51 +204,35 @@ class World(object):
                 agent.state.p_pos += np.array([dx, dy, 0.0], dtype=np.float32)
 
 
-    def test_collision(self,agent1):
-        # 将一个timeslot的运动过程在时间上分成100份，判断每一小步中是否会发生碰撞
-        dx1, dy1, move_angle1 = self.cal_pos_offset(agent1)
-        acc_range = 100
-        # timeslot分成100份以后，在这个更小的时间颗粒中，x,y方向上移动的距离
-        tiny_dx1, tiny_dy1 = 0.001 * agent1.max_speed * self.time_slot / acc_range * np.array([np.cos(move_angle1), np.sin(move_angle1)], dtype=np.float32)
-        # 遍历其他agent判断是否会发生碰撞
-        for agent2 in self.agents:
-            dx2, dy2, move_angle2 = self.cal_pos_offset(agent2)
-            for dt in range(0, acc_range+1):
-                tiny_dx2, tiny_dy2 = 0.001 * agent2.max_speed * self.time_slot / acc_range * np.array([np.cos(move_angle2), np.sin(move_angle2)], dtype=np.float32)
-                # 判断agent下一时刻的位置(被细分之后的一个小时刻)
-                if np.abs(dt * tiny_dx1) >= np.abs(dx1) or np.abs(dt * tiny_dy1) >= np.abs(dy1):
-                    new_pos1 = agent1.state.p_pos + np.array([dx1, dy1, 0.0], dtype=np.float32)
+    def test_collision(self, agent1):
+        dx1, dy1 = self.cal_pos_offset(agent1)
+        new_pos1 = agent1.state.p_pos + np.array([dx1, dy1, 0.0], dtype=np.float32)
+        if (-self.bound + agent1.size < new_pos1[0] < self.bound - agent1.size) and (-self.bound + agent1.size < new_pos1[1] < self.bound - agent1.size):
+            for agent2 in self.agents:
+                if agent2 is agent1:
+                    pass
                 else:
-                    new_pos1 = agent1.state.p_pos + dt * np.array([tiny_dx1, tiny_dy1, 0.0], dtype=np.float32)
-                if np.abs(dt * tiny_dx2) >= np.abs(dx2) or np.abs(dt * tiny_dy2) >= np.abs(dy2):
+                    dx2, dy2 = self.cal_pos_offset(agent2)
                     new_pos2 = agent2.state.p_pos + np.array([dx2, dy2, 0.0], dtype=np.float32)
-                else:
-                    new_pos2 = agent2.state.p_pos + dt * np.array([tiny_dx2, tiny_dy2, 0.0], dtype=np.float32)
-                # 判断是否会出界
-                if (-1.0 + agent1.size < new_pos1[0] < 1.0 - agent1.size) and (-1.0 + agent1.size < new_pos1[1] < 1.0 - agent1.size):
                     delta_pos = new_pos1 - new_pos2
                     dist = np.sqrt(np.sum(np.square(delta_pos))).astype(np.float32)
                     dist_min = agent1.size + agent2.size
-                    # 判断是否会碰撞
-                    if dist <= dist_min:
-                        if agent1 is agent2:
-                            pass
-                        else:
-                            # 无人机之间碰撞返回2
-                            return 2
-                else:
-                    # 超出边界返回1
-                    return 1
-        # 没有任何碰撞返回0
+                    if dist < dist_min:
+                        return 1
+        # 超出边界
+        else:
+            return 1
         return 0
 
     # 根据动作计算agent的下一时刻位置
     def cal_pos_offset(self, agent):
+        # 动作 u[0] = [0,1] u[1] = [-np.pi, np.pi]
         move_len = agent.action.u[0]
         move_angle = agent.action.u[1]
-        dx = np.cos(move_angle) * move_len
-        dy = np.sin(move_angle) * move_len
-        return dx, dy, move_angle
+        dx = np.cos(move_angle) * move_len * agent.max_speed
+        dy = np.sin(move_angle) * move_len * agent.max_speed
+        return dx, dy
+
     # 更新智能体通信状态
     def update_agent_state(self, agent):
         if agent.silent:
@@ -264,52 +240,4 @@ class World(object):
         else:
             noise = np.random.random(*agent.action.c.shape) * agent.c_noise if agent.c_noise else 0.0
             agent.state.c = agent.action.c + noise
-
-
-
-
-
-    # # 收集对环境实体的力
-    # def apply_environment_force(self, p_force):
-    #     # 简单的碰撞反应
-    #     for a, entity_a in enumerate(self.entities):
-    #         for b, entity_b in enumerate(self.entities):
-    #             if (b <= a):
-    #                 continue
-    #             [f_a, f_b] = self.get_collision_force(entity_a, entity_b)
-    #             if (f_a is not None):
-    #                 if (p_force[a] is None):
-    #                     p_force[a] = 0.0
-    #                 p_force[a] = f_a + p_force[a]
-    #             if (f_b is not None):
-    #                 if (p_force[b] is None):
-    #                     p_force[b] = 0.0
-    #                 p_force[b] = f_b + p_force[b]
-    #     return p_force
-
-
-
-
-
-    # 获取两个实体碰撞的力
-    # def get_collision_force(self, entity_a, entity_b):
-    #     # 如果其中有一个不是碰撞体， 那么不发生碰撞
-    #     if (not entity_a.collide) or (not entity_b.collide):
-    #         return [None, None]
-    #     # 如果a和b是同一个实体也不发生碰撞
-    #     if (entity_a is entity_b):
-    #         return [None, None]
-    #     # 计算二者之间的实际距离
-    #     delta_pos = entity_a.state.p_pos - entity_b.state.p_pos
-    #     dist = np.sqrt(np.sum(np.square(delta_pos)))
-    #     # 两个碰撞实体允许的最小距离
-    #     dist_min = entity_a.size + entity_b.size
-    #     # 渗透率
-    #     k = self.contact_margin
-    #     penetration = np.logaddexp(0, -(dist - dist_min) / k) * k
-    #     force = self.contact_force * delta_pos / dist * penetration
-    #     force_a = +force if entity_a.movable else None
-    #     force_b = -force if entity_b.movable else None
-    #     return [force_a, force_b]
-
 
